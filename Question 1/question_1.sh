@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# Create a regular file
-echo "Hello from original file" > original.txt
+# Create the target file.
+echo "Hello from the original file." > original.txt
 
-# a. Create soft link
+# Create a symbolic link to the target.
 ln -s original.txt softlink.txt
 
-# b. Create hard link
+# Create a hard link to the same inode.
 ln original.txt hardlink.txt
 
-# c. Create FIFO
+# Create a FIFO (named pipe) for IPC.
 mkfifo myfifo
 
-# Display the created files
+# Display inode numbers and file types for verification.
 ls -li original.txt softlink.txt hardlink.txt myfifo
