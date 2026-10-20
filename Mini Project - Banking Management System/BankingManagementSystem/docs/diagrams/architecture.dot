@@ -1,0 +1,58 @@
+digraph Architecture {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=12, label="Architecture - Banking Management System (client/server, concurrent, file-based)", labelloc=t, nodesep=0.35, ranksep=0.8, splines=true, bgcolor=white];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#EEF2FF", color="#4F46E5"];
+  edge  [fontname="Helvetica", fontsize=9, color="#374151"];
+
+  subgraph cluster_clients {
+    label="Clients (any terminal / machine)"; style="rounded,dashed"; color="#9CA3AF";
+    c1 [label="bank_client\nCustomer menu"];
+    c2 [label="bank_client\nEmployee menu"];
+    c3 [label="bank_client\nManager menu"];
+    c4 [label="bank_client\nAdmin menu"];
+    cs [label="bank_stress\n(fork / pthread workers)", fillcolor="#FEF3C7", color="#D97706"];
+  }
+
+  subgraph cluster_server {
+    label="bank_server  (one machine)"; style="rounded"; color="#4F46E5";
+    main [label="Main process\nsocket() bind() listen()\naccept() loop\nSIGCHLD: waitpid() (no zombies)\nSIGINT/SIGTERM: graceful shutdown", fillcolor="#E0E7FF"];
+    hk   [label="Housekeeper pthread\nreclaims dead sessions\nruns crash recovery", fillcolor="#E0E7FF"];
+    ch   [label="Server child (fork per client)\nhandle_client_connection()\nselect() + alarm() idle timeout\nSIGUSR1 forced logout\nrole-checked dispatch:\nCustomer | Employee | Manager | Admin modules", fillcolor="#DBEAFE"];
+    ledger [label="ledger.c\nACID money operations", fillcolor="#DCFCE7", color="#16A34A"];
+    daemon [label="Audit daemon\nfork + setsid + chdir(/)\nmsgrcv() loop", fillcolor="#FCE7F3", color="#DB2777"];
+  }
+
+  subgraph cluster_ipc {
+    label="System V IPC (kernel)"; style="rounded"; color="#DB2777";
+    shm [label="Shared memory\nsession table\n(one session per user)", shape=cylinder, fillcolor="#FDF2F8", color="#DB2777"];
+    sem [label="Semaphore\n(binary, SEM_UNDO)", shape=octagon, fillcolor="#FDF2F8", color="#DB2777"];
+    mq  [label="Message queue\naudit events", shape=cds, fillcolor="#FDF2F8", color="#DB2777"];
+  }
+
+  subgraph cluster_disk {
+    label="Disk: data/  (open/read/write/lseek/fsync + fcntl record locks)"; style="rounded"; color="#16A34A";
+    files [label="customers.dat  employees.dat  admins.dat\nloans.dat  transactions.dat  feedback.dat\n(fixed-size records, offset = (id-base) x size)", shape=folder, fillcolor="#F0FDF4", color="#16A34A"];
+    jnl  [label="journal/jnl_<pid>.dat\nwrite-ahead undo log", shape=note, fillcolor="#F0FDF4", color="#16A34A"];
+    gate [label=".gate\nshared/exclusive lock", shape=note, fillcolor="#F0FDF4", color="#16A34A"];
+    log  [label="logs/audit.log", shape=note, fillcolor="#FFF7ED", color="#EA580C"];
+  }
+
+  c1 -> main [label="1. TCP connect :8080", style=dashed];
+  {c2 c3 c4 cs} -> main [style=dashed];
+  c1 -> ch [label="2. Request / Response (fixed-size structs)\nover the SAME connection for the whole session", dir=both, color="#2563EB"];
+  {c2 c3 c4 cs} -> ch [dir=both, color="#2563EB"];
+  main -> ch [label="fork()"];
+  main -> daemon [label="fork()"];
+  main -> hk [label="pthread_create()"];
+  ch -> ledger;
+  ch -> shm [label="login / logout"];
+  shm -> sem [label="guarded by", style=dotted];
+  ch -> mq [label="msgsnd()"];
+  mq -> daemon [label="msgrcv()"];
+  daemon -> log [label="append"];
+  ledger -> files [label="F_WRLCK records\n(lower id first)"];
+  ledger -> jnl [label="fsync before data"];
+  ch -> gate [label="F_RDLCK"];
+  hk -> jnl [label="recover orphans"];
+  hk -> shm [label="reap dead pids"];
+  ch -> files [label="F_RDLCK reads"];
+}

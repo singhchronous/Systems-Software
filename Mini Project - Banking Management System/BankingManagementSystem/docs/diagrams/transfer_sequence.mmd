@@ -1,0 +1,34 @@
+---
+title: Transfer Funds - how ACID is achieved (ledger_transfer)
+---
+sequenceDiagram
+    autonumber
+    actor C as Customer (bank_client)
+    participant S as Server child process
+    participant G as Gate (.gate)
+    participant F as customers.dat
+    participant T as transactions.dat
+    participant J as journal/jnl_pid.dat
+
+    C->>S: Request{OP_TRANSFER, to=1002, amount}
+    Note over S: role checked from SESSION,<br/>not from the request
+    S->>G: fcntl F_RDLCK (shared)
+    S->>F: fcntl F_WRLCK record 1001 (lower id first)
+    S->>F: fcntl F_WRLCK record 1002
+    Note over S,F: ISOLATION - other processes touching<br/>1001/1002 now wait (F_SETLKW)
+    S->>J: any orphan journal of a dead process?
+    S->>F: lseek + read both records
+    Note over S: CONSISTENCY checks:<br/>both ACTIVE, balance >= amount,<br/>target exists, not self
+    S->>T: append 2 records as PENDING (append lock)
+    S->>J: write before + after images
+    S->>J: fsync()  (write-ahead)
+    S->>F: write debit 1001, write credit 1002
+    S->>T: flip both records to COMMITTED
+    S->>F: fsync()
+    S->>T: fsync()
+    S->>J: unlink()  = COMMIT point
+    Note over S,J: ATOMICITY - a crash before this point<br/>leaves the journal, recovery restores<br/>the before images (all or nothing)
+    S->>F: unlock 1002, 1001
+    S->>G: unlock
+    S-->>C: Response{OK, new balance}
+    Note over C,S: DURABILITY - "OK" is sent only<br/>after fsync() of every file

@@ -1,0 +1,10 @@
+build/
+bank_server
+bank_client
+bank_init
+bank_verify
+bank_stress
+data/
+logs/
+test_data/
+demo_data/

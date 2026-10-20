@@ -1,0 +1,14 @@
+---
+title: Loan application life-cycle
+---
+stateDiagram-v2
+    [*] --> PENDING : Customer - Apply for a Loan
+    PENDING --> ASSIGNED : Manager - Assign to Employee
+    ASSIGNED --> ASSIGNED : Manager - re-assign
+    ASSIGNED --> UNDER_REVIEW : Employee - Process Loan Application
+    UNDER_REVIEW --> APPROVED : Employee - Approve (amount credited, journaled)
+    UNDER_REVIEW --> REJECTED : Employee - Reject (reason required)
+    ASSIGNED --> PENDING : Admin promotes / deactivates the employee
+    UNDER_REVIEW --> PENDING : Admin promotes / deactivates the employee
+    APPROVED --> [*]
+    REJECTED --> [*]

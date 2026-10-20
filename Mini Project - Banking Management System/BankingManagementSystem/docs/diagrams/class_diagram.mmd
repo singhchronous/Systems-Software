@@ -1,0 +1,219 @@
+---
+title: Class Diagram - Banking Management System (as implemented)
+---
+classDiagram
+    direction TB
+
+    class Bank {
+        <<server.c / auth.c>>
+        -int listen_sd
+        -pid_t children[]
+        -pid_t audit_daemon
+        +main()
+        +handle_client_connection(sock, addr)
+        +validate_login(ctx, role, id, password)
+        +dispatch(ctx, request)
+        +handle_customer_requests()
+        +handle_employee_requests()
+        +handle_manager_requests()
+        +handle_admin_requests()
+        +handle_change_password()
+        +force_logout_user(uid)
+        +log_transaction(ctx, msg)
+        -housekeeper() thread
+        -main_sigchld() / main_sigterm()
+    }
+
+    class ClientCtx {
+        <<one per connected client>>
+        +int sock
+        +int logged_in
+        +Role role
+        +int uid
+        +int session_slot
+        +char addr[]
+    }
+
+    class Customer {
+        <<customer_server.c + customer_client.c>>
+        -int id
+        -string first_name
+        -string last_name
+        -string phone
+        -string email
+        -string salt / pass_hash
+        -UserStatus status
+        -int64 balance
+        -int64 loan_amount
+        +get_balance()
+        +deposit_money(amount)
+        +withdraw_money(amount)
+        +transfer_funds(to, amount)
+        +apply_for_loan(amount, months, purpose)
+        +view_my_loans()
+        +add_feedback(message)
+        +view_transaction_history()
+        +change_customer_password()
+    }
+
+    class Employee {
+        <<employee_server.c + employee_client.c>>
+        -int id
+        -Role role = EMPLOYEE
+        -string first_name / last_name
+        -string phone / email
+        -string salt / pass_hash
+        -UserStatus status
+        +add_customer(details, opening_deposit)
+        +get_customer_details(id)
+        +update_customer_details(id, field, value)
+        +delete_customer(id)  close account
+        +get_assigned_loans()
+        +process_loan(loan_id)
+        +update_loan_status(loan_id, approve/reject)
+        +view_transaction_history(id)  passbook
+        +change_employee_password()
+    }
+
+    class Manager {
+        <<manager_server.c + manager_client.c>>
+        -Role role = MANAGER
+        +set_customer_status(id, active/inactive)
+        +list_loans(only_pending)
+        +assign_loan_to_employee(loan_id, emp_id)
+        +get_all_feedback()
+        +review_feedback(feedback_id, note)
+        +change_manager_password()
+    }
+
+    class Admin {
+        <<admin_server.c + admin_client.c>>
+        -int id
+        -string first_name / last_name
+        -string salt / pass_hash
+        +add_employee(details, role)
+        +get_employee_details(id)
+        +update_employee_details(id, field, value)
+        +update_customer_details(id, field, value)
+        +manage_user_roles()
+        +promote_to_manager(emp_id)
+        +demote_to_employee(mgr_id)
+        +delete_employee(id)  deactivate
+        +list_sessions()
+        +force_logout(uid)
+        +view_audit_log(n)
+        +change_admin_password()
+    }
+
+    class Loan {
+        -int id
+        -int customer_id
+        -int64 amount
+        -int tenure_months
+        -LoanStatus status
+        -int assigned_to
+        -int assigned_by
+        -int decided_by
+        -string purpose
+        -string remark
+    }
+
+    class Transaction {
+        -int id
+        -int account_id
+        -TxnType type
+        -TxnState state  PENDING/COMMITTED
+        -int counterparty
+        -int64 amount
+        -int64 balance_after
+        -time timestamp
+    }
+
+    class Feedback {
+        -int id
+        -int customer_id
+        -FeedbackStatus status
+        -int reviewed_by
+        -string message
+        -string manager_note
+    }
+
+    class Ledger {
+        <<ledger.c : ACID money operations>>
+        +ledger_deposit()
+        +ledger_withdraw()
+        +ledger_transfer()  lock lower id first
+        +ledger_open_account()
+        +ledger_approve_loan()
+    }
+
+    class Journal {
+        <<journal.c : write-ahead undo log>>
+        -JournalEntry e[4]  before/after images
+        -uint32 checksum
+        +journal_begin()
+        +journal_add(table, id, before, after)
+        +journal_commit()  fsync, apply, unlink
+        +journal_orphans_exist()
+        +journal_recover(at_startup)
+    }
+
+    class FileStore {
+        <<db.c : open/read/write/lseek/fsync>>
+        +db_open_all()
+        +db_read_raw() / db_write_raw()
+        +db_append()  get_next_id
+        +db_get() / db_update() / db_scan()
+        +db_lock(table, id, F_RDLCK/F_WRLCK)
+        +gate_shared() / gate_exclusive()
+    }
+
+    class RecordLock {
+        <<locking.c : fcntl F_SETLKW>>
+        +lock_range(fd, type, start, len)
+        +unlock_range(fd, start, len)
+    }
+
+    class SessionTable {
+        <<session.c : shm + semaphore>>
+        -SessionSlot slot[128]
+        +session_init()  shmget/shmat/semget
+        +session_acquire(role, uid)  one session per user
+        +session_release(slot)
+        +session_find(uid)
+        +session_reap_dead()
+        +session_destroy()
+    }
+
+    class AuditLog {
+        <<audit.c : message queue + daemon>>
+        +audit_init()  msgget
+        +audit_start_daemon()  fork + setsid
+        +audit_log(fmt)  msgsnd
+        +audit_stop()  msgctl IPC_RMID
+    }
+
+    Bank "1" *-- "*" ClientCtx : forks a child per client
+    Bank ..> Customer : handles
+    Bank ..> Employee : handles
+    Bank ..> Manager : handles
+    Bank ..> Admin : handles
+    Bank --> SessionTable : one session per user
+    Bank --> AuditLog : logs events
+    Employee <|-- Manager : same file, role field
+    Admin "1" --> "*" Employee : adds / promotes / demotes
+    Admin "1" --> "*" Customer : modifies
+    Manager "1" --> "*" Customer : activates / deactivates
+    Manager "1" --> "*" Loan : assigns
+    Manager "1" --> "*" Feedback : reviews
+    Employee "1" --> "*" Customer : opens / modifies / closes
+    Employee "1" --> "*" Loan : processes / approves / rejects
+    Customer "1" o-- "*" Loan : applies for
+    Customer "1" *-- "*" Transaction : has
+    Customer "1" o-- "*" Feedback : submits
+    Customer ..> Ledger : money operations
+    Employee ..> Ledger : opening deposit, loan credit
+    Ledger --> Journal : atomic multi-record commit
+    Ledger --> FileStore
+    Journal --> FileStore
+    FileStore --> RecordLock
