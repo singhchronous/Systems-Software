@@ -5,6 +5,7 @@ A concurrent client/server banking system written in C. It uses Linux system cal
 
 | Deliverable (TA's list) | Where it is |
 |---|---|
+| **Blueprint (all diagrams in one file)** | **`docs/Blueprint.pdf`** - architecture, class diagram, transfer sequence (ACID), loan life-cycle |
 | Blueprint / class diagram | `docs/diagrams/class_diagram.png` (source: `.mmd`) |
 | Architecture diagram | `docs/diagrams/architecture.png` (source: `.dot`) |
 | Extra diagrams | `docs/diagrams/transfer_sequence.png` (how ACID works) and `docs/diagrams/loan_states.png` |
@@ -108,4 +109,4 @@ data/  logs/        created at run time (not part of the source)
 4. Run the full automated test suite: `./scripts/run_all_tests.sh` (about 30 seconds, 74 checks).
 5. **Optional: connecting from Windows.** Find the VM's IP address with `ip addr`. In NAT mode Windows can usually reach the VM directly. Then run a client in a second VM or WSL with `./bank_client <vm-ip> 8080`.
 
-See **docs/TESTING.md** for the step-by-step manual test plan and the demos to show during evaluation.
+See **docs/TESTING.md** for the step-by-step manual test plan and the two demonstration scripts.

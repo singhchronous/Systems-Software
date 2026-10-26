@@ -6,7 +6,7 @@
  * already holds a session for that user id. Because each slot stores the pid
  * of the server child that owns it, a session left behind by a crashed child
  * is detected with kill(pid, 0) and reclaimed - a user can never get stuck
- * as "already logged in" (a bug in last year's reference project).
+ * as "already logged in" (the weakness of a simple is_logged_in flag).
  */
 #ifndef SESSION_H
 #define SESSION_H

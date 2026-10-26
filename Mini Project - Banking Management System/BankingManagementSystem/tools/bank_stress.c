@@ -40,6 +40,7 @@
 static const char *g_host = "127.0.0.1";
 static int g_port = DEFAULT_PORT;
 static int g_n = 20, g_m = 50, g_threads = 0;
+static int g_expect_race = 0;   /* --expect-race: server runs with --no-lock (demo) */
 static int g_emp = 2002;
 static const char *g_emp_pw = "emp123";
 static int32_t *g_ids;
@@ -299,6 +300,10 @@ static int phase_conservation(void)
         printf("  [PASS] money conserved - no lost updates, no race condition\n");
         return 0;
     }
+    if (g_expect_race && err == 0) {
+        printf("  [EXPECTED] total changed by %s -> RACE CONDITION reproduced (locking is disabled)\n", diff);
+        return 1;
+    }
     printf("  [FAIL] total changed by %s -> RACE CONDITION (lost updates)%s\n", diff,
            err ? " / some balance queries failed" : "");
     return 1;
@@ -314,8 +319,9 @@ int main(int argc, char *argv[])
         else if (!strcmp(argv[i], "-e") && i + 1 < argc) g_emp = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-w") && i + 1 < argc) g_emp_pw = argv[++i];
         else if (!strcmp(argv[i], "--threads")) g_threads = 1;
+        else if (!strcmp(argv[i], "--expect-race")) g_expect_race = 1;
         else {
-            printf("Usage: %s [-n clients] [-m transfers] [--threads] [-H host] [-p port] [-e emp_id] [-w emp_password]\n", argv[0]);
+            printf("Usage: %s [-n clients] [-m transfers] [--threads] [--expect-race] [-H host] [-p port] [-e emp_id] [-w emp_password]\n", argv[0]);
             return 2;
         }
     }
@@ -335,7 +341,12 @@ int main(int argc, char *argv[])
     printf("\nPhase 2: concurrent transfers (race-condition test)\n");
     int f2 = phase_conservation();
 
-    printf("\nOverall: %s\n", (f1 || f2) ? "FAIL" : "PASS");
+    if (g_expect_race)
+        printf("\nOverall: %s\n", f1 ? "FAIL (session test)" :
+               f2 ? "race condition demonstrated - this is the EXPECTED result with --no-lock"
+                  : "no race observed this time (try again or raise --race-delay)");
+    else
+        printf("\nOverall: %s\n", (f1 || f2) ? "FAIL" : "PASS");
     printf("Tip: run ./bank_verify to check every account against its transaction history.\n");
     return (f1 || f2) ? 1 : 0;
 }

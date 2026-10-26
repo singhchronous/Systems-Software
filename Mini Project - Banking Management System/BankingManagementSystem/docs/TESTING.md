@@ -5,8 +5,8 @@ There are three levels of testing. Run them in this order inside your Linux VM.
 | Level | What | Time |
 |---|---|---|
 | 1. Automated suite | `./scripts/run_all_tests.sh`: 74 checks covering every menu item of all 4 roles, sessions, concurrency, race demo, crash recovery, idle timeout | ~30 s |
-| 2. Live demos | `./scripts/demo_race.sh` and `./scripts/demo_crash.sh`: show these during the evaluation | ~1 min each |
-| 3. Manual walkthrough | Section C below: multiple terminals, the way a grader will try it | 15–20 min |
+| 2. Live demos | `./scripts/demo_race.sh` and `./scripts/demo_crash.sh`: they demonstrate the locking and the crash recovery | ~1 min each |
+| 3. Manual walkthrough | Section C below: multiple terminals, exercising every menu by hand | 15–20 min |
 
 The automated suite and the demos use their **own** port and data folder (`test_data/`, `demo_data/`), so they never change your real `data/`.
 
@@ -20,7 +20,7 @@ make
 ```
 The run should end with `RESULT: 74 passed, 0 failed`. If anything fails, the failing check names are listed at the end. The server log for the run is in `/tmp/bms_test_server.log`.
 
-## B. Demos for the evaluation
+## B. Demonstrations
 
 **Race condition with and without locks**
 ```bash

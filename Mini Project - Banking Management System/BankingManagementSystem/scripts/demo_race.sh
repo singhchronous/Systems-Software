@@ -16,15 +16,18 @@ run() {
     ./bank_server -p $PORT -d demo_data "$@" > /tmp/bms_demo_server.log 2>&1 &
     SPID=$!; disown $SPID
     sleep 1
-    ./bank_stress -p $PORT -n 20 -m 30
+    ./bank_stress -p $PORT -n 20 -m 30 $STRESS_OPTS
     ./bank_verify -d demo_data | tail -6
     kill -INT $SPID; sleep 2
 }
 echo "################  RUN A: record locking ON (normal server)  ################"
-run --race-delay 3000
+echo "Expected: money conserved, bank_verify CONSISTENT"
+STRESS_OPTS="" run --race-delay 3000
 echo
 echo "################  RUN B: record locking OFF (./bank_server --no-lock)  ######"
-run --no-lock --race-delay 3000
+echo "Expected: money is lost (lost updates) and bank_verify reports INCONSISTENT -"
+echo "this run exists to show what the fcntl() locks prevent."
+STRESS_OPTS="--expect-race" run --no-lock --race-delay 3000
 rm -rf demo_data
 echo
 echo "Same workload, same delay - only the fcntl() locks differ."

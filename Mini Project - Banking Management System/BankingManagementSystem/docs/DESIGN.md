@@ -38,7 +38,7 @@ Child handlers are installed **without `SA_RESTART`**, so `select()` returns `EI
 **Rules that keep this correct** (they cover classic exam questions):
 1. **Every process opens its own descriptors after `fork()`** (`db_close_all(); db_open_all();`). A descriptor inherited across `fork()` shares its *file offset* with the parent, so two processes doing `lseek()` + `read()` would move each other's offset.
 2. **Each file is opened only once per process.** Closing *any* descriptor of a file drops *all* of the process's `fcntl` locks on that file.
-3. Money is stored in integer **paise**. Floating point (as in last year's project) produces rounding errors.
+3. Money is stored in integer **paise**. Floating-point money (`double`) would produce rounding errors.
 
 ## 3. Concurrency and synchronization
 
@@ -51,11 +51,11 @@ Child handlers are installed **without `SA_RESTART`**, so `select()` returns `EI
 | **Gate** lock (`data/.gate`) | operations hold it *shared*; crash recovery takes it *exclusive* | `gate_*()` |
 | System V **semaphore** (`SEM_UNDO`) | protects the shared-memory session table | `session.c` |
 
-Record locking (advisory, slide 46) lets two customers update **different** accounts in parallel. Only operations on the **same** account wait for each other. `F_SETLKW` blocks instead of failing; last year's project used `flock(LOCK_NB)` on the whole database and answered "System busy, try again".
+Record locking (advisory, slide 46) lets two customers update **different** accounts in parallel. Only operations on the **same** account wait for each other. `F_SETLKW` makes a process wait for the lock instead of failing, so users never see "system busy, try again" (which is what a non-blocking lock on the whole database would give).
 
 **Deadlock prevention**: there is one global lock order: *gate → employees → loans → customers (ascending id) → transactions → feedback*. A transfer always locks the **lower account number first**, so the opposing transfers A→B and B→A queue on the same lock instead of each holding one lock and waiting for the other (slide 44 lists deadlock as a file-locking problem). The kernel's `EDEADLK` detection is handled as well.
 
-**One session per user**: on login the child takes the semaphore, scans the shared-memory table, refuses if a *live* process (checked with `kill(pid, 0)`) already holds that user, otherwise claims a slot, then releases the semaphore. Because liveness is checked by PID, a client or server process that crashes can never leave a user locked out. Last year's `is_logged_in` flag had exactly that problem.
+**One session per user**: on login the child takes the semaphore, scans the shared-memory table, refuses if a *live* process (checked with `kill(pid, 0)`) already holds that user, otherwise claims a slot, then releases the semaphore. Because liveness is checked by PID, a client or server process that crashes can never leave a user locked out. (A simple `is_logged_in` flag in the user record would stay set forever after a crash.)
 
 **Proof**: `bank_stress` runs 20 processes making 1000 simultaneous random transfers and confirms the total is unchanged. With `bank_server --no-lock --race-delay 3000` the same run loses ₹50,000+ through lost updates (`scripts/demo_race.sh`).
 
@@ -66,7 +66,7 @@ Record locking (advisory, slide 46) lets two customers update **different** acco
 | Property | How it is guaranteed |
 |---|---|
 | **Atomicity** | Each multi-record operation (deposit/withdraw = account + ledger entry; transfer = 2 accounts + 2 ledger entries; loan approval = loan + account + ledger entry) goes through `journal_commit()`. Before and after images are written to `journal/jnl_<pid>.dat` and `fsync`'d **before** any data file changes. Then the after images are written, the data files are `fsync`'d, and the journal is unlinked (the commit point). Ledger entries are first appended as `PENDING` and only become `COMMITTED` through the journal. If anything dies in between, recovery writes the before images back: **all or nothing**. |
-| **Consistency** | Checks run under lock before writing: the account exists and is ACTIVE, the balance never goes negative, amount limits hold, there is no self-transfer, the target account exists (last year's code destroyed money here), a loan can only be approved once and only after review, and an account can only be closed with zero balance and no open loans. `bank_verify` checks the invariants: each balance equals the sum of its committed transactions, transfers out equal transfers in, and every approved loan was credited exactly once. |
+| **Consistency** | Checks run under lock before writing: the account exists and is ACTIVE, the balance never goes negative, amount limits hold, there is no self-transfer, the target account exists (otherwise the debit would have nowhere to go), a loan can only be approved once and only after review, and an account can only be closed with zero balance and no open loans. `bank_verify` checks the invariants: each balance equals the sum of its committed transactions, transfers out equal transfers in, and every approved loan was credited exactly once. |
 | **Isolation** | `fcntl` record locks are held from the read until the write (no read-modify-write races). Readers take shared locks, so they never see a half-written record. The gate keeps recovery away from operations that are in progress. |
 | **Durability** | `fsync()` of the journal, of the data files, and of the journal directory (so the create/unlink is durable) **before** the client is told "OK". |
 
@@ -117,19 +117,19 @@ Record locking (advisory, slide 46) lets two customers update **different** acco
 | Manage user roles | `manage_user_roles` (promote/demote), `set_employee_status` | Admin 5 |
 | Change password / logout / exit (all roles) | `handle_change_password`, `dispatch` | last 3 items of every menu |
 
-## 7. Differences from last year's reference project (and why)
+## 7. Design choices (and the simpler alternatives we rejected)
 
-| Last year | This project |
+| Simpler alternative | What this project does instead |
 |---|---|
-| SQLite (a library) and one `flock(LOCK_NB)` on the whole database, so concurrent users got "System busy" | Plain record files with system calls only, plus `fcntl` **record** locks that wait (`F_SETLKW`) |
-| New TCP connection per request; the client sends its own user ID and role, so anyone could impersonate anyone | One connection per session; identity stored in the server process; role checked server-side |
-| Transfer to a non-existent account debited the sender and still committed, so money vanished | Target validated under lock; the whole transfer is journaled (all or nothing) |
-| `is_logged_in` flag stayed 1 forever after a crash or Ctrl+C | Session slots carry the owner PID, so dead sessions are reclaimed automatically |
-| Employee "change password" silently did nothing yet reported SUCCESS | Implemented for every role, with the old password verified |
-| SQL built with `'%s'`, so a quote in feedback broke it | Fixed-size binary messages; no parsing of user text |
+| A database library (e.g. SQLite) plus one `flock(LOCK_NB)` on the whole file: concurrent users get "System busy" | Plain record files with system calls only, plus `fcntl` **record** locks that wait (`F_SETLKW`) |
+| New TCP connection per request with the client sending its own user ID and role: anyone could impersonate anyone | One connection per session; identity stored in the server process; role checked server-side |
+| Debit and credit as separate, un-journaled writes: a bad target account or a crash in between loses money | Target validated under lock; the whole transfer is journaled (all or nothing) |
+| An `is_logged_in` flag in the user record: stays set forever after a crash or Ctrl+C | Session slots carry the owner PID, so dead sessions are reclaimed automatically |
+| A generic fallback handler that answers SUCCESS for unknown requests | Unknown or unauthorised operations are refused with "Permission denied"; change password is implemented for every role, with the old password verified |
+| Text protocol / SQL built with `'%s'`: a `|` or quote in user input breaks it | Fixed-size binary messages; no parsing of user text |
 | Plain-text passwords, money as `double` | Salted SHA-256, integer paise |
 
-## 8. Known limitations (honest notes for the viva)
+## 8. Known limitations
 * Locks are **advisory**, so only cooperating programs (ours) respect them. That is the normal design for Linux record locking.
 * The client and server exchange raw C structs. Both must be built on the same architecture (true for our Linux machines). A production protocol would serialise fields.
 * Orphan-journal detection relies on PIDs. If the PID of a crashed process were reused before recovery ran, that journal would wait until the next check or server restart. Start-up recovery always rolls back every journal.

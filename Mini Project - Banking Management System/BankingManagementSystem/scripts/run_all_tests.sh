@@ -181,7 +181,7 @@ section "Race-condition demo (locking DISABLED on purpose)"
 rm -rf ${DATA}_race
 DATA_SAVE=$DATA; DATA=${DATA}_race
 start_server --no-lock --race-delay 3000
-if ./bank_stress -p $PORT -n 20 -m 30 > /tmp/bms_race.out 2>&1; then
+if ./bank_stress -p $PORT -n 20 -m 30 --expect-race > /tmp/bms_race.out 2>&1; then
     bad "without locks the race SHOULD appear" "(race not observed this time - try again)"
 else
     ok "without locks money is lost/created: $(grep -o 'total changed by [^ ]* [^ ]*' /tmp/bms_race.out)"
